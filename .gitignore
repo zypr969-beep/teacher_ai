@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.DS_Store
+photos/
+references/
+output/
+*.json
+refs.csv
