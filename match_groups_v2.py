@@ -36,10 +36,22 @@ def load() -> tuple[dict, list[dict]]:
 
 def main() -> None:
     references, records = load()
+    teachers_data = references.get("teachers", {})
+
     teacher_vectors = {
         name: [normalize(np.asarray(ref["embedding"], dtype=np.float32)) for ref in data["references"]]
-        for name, data in references.get("teachers", {}).items()
+        for name, data in teachers_data.items()
     }
+    # department per teacher, for tagging matches (used later to organize
+    # confirmed photos into per-department folders in app.py)
+    teacher_departments = {
+        name: {
+            "department": data.get("department", ""),
+            "department_slug": data.get("department_slug", "unassigned"),
+        }
+        for name, data in teachers_data.items()
+    }
+
     groups: dict[int, list[np.ndarray]] = {}
     for record in records:
         groups.setdefault(int(record["cluster"]), []).append(np.asarray(record["embedding"], dtype=np.float32))
@@ -59,7 +71,13 @@ def main() -> None:
 
         row = {"group": f"person_{cluster:03d}", "face_count": len(embeddings)}
         if not scored:
-            row.update({"status": "UNMATCHED", "best_score": "", "margin": ""})
+            row.update({
+                "status": "UNMATCHED",
+                "best_score": "",
+                "margin": "",
+                "best_department": "",
+                "best_department_slug": "",
+            })
         else:
             best_name, best_score, best_ref = scored[0]
             second_score = scored[1][1] if len(scored) > 1 else 0.0
@@ -67,16 +85,21 @@ def main() -> None:
             status = "REVIEW"
             if best_score >= MIN_SCORE and margin >= MIN_MARGIN:
                 status = "CANDIDATE"
+            dept_info = teacher_departments.get(best_name, {"department": "", "department_slug": "unassigned"})
             row.update({
                 "status": status,
                 "best_candidate": best_name,
                 "best_score": round(best_score, 4),
                 "best_reference_score": round(best_ref, 4),
                 "margin": round(margin, 4),
+                "best_department": dept_info["department"],
+                "best_department_slug": dept_info["department_slug"],
             })
             for index, (name, score, _) in enumerate(scored[:TOP_N], 1):
                 row[f"candidate_{index}"] = name
                 row[f"score_{index}"] = round(score, 4)
+                cand_dept = teacher_departments.get(name, {"department_slug": "unassigned"})
+                row[f"candidate_{index}_department_slug"] = cand_dept["department_slug"]
         rows.append(row)
 
     df = pd.DataFrame(rows)
